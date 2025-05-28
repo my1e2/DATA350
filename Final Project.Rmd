@@ -1,0 +1,518 @@
+---
+title: "The Truth about America"
+author: "Myles Sartor"
+date: "2025-05-07"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(COVID19)
+library(viridis)
+library(scales)
+library(tidygraph)
+library(ggraph)
+library(igraph)
+library(ggthemes)
+library(pheatmap)
+library(maps)
+```
+
+
+
+
+# Major Question and Intro:
+
+The United States Census Bureau provides pivotal information about the economic, social, and demographic structure of the nation for those in America who report on their circumstances. From household characteristics such as education, income, and costs, to inequality trends marked by race, achievements, and gender, the Census gives individuals a good place to start when they want to begin using reliable data to answer tough questions about the general population. I wanted to visually capture some of these trends in visualizations that truly encapsulated the bigger picture for the audience in a way that quickly garnered attention. Furthermore, if I was going to do this right, I wanted to make sure that the visuals were capturing a story that couldn't easily be told by simply looking at the numbers and responses. The main question that stemmed from this asked how the general statistical observations of the United States are distributed among different groups at a national level? In focusing on specific people and circumstances, I will tactically obtain information on many different groups to maintain specificity despite not observing things on a county level. 
+
+
+
+# Analysis:
+
+## Plot 1:
+
+In this faceted bar plot of home ownership rates by race throughout America, I
+am comparing the ownership rates of White, Black, American Indian/Alaskan
+Natives, Hispanic, Asians and more households across all 50 states to observe
+any potential gaps that may exist between them. The plot has the
+percentage of owner-occupied homes across the United states in all of these racial
+categories. The "White alone" group consistently shows the highest home
+ownership rates throughout America, generally ranging between 50% and 80%,
+indicating a significantly high level of housing stability. In contrast, other
+racial groups such as "Black or African American alone", "American Indian
+and Alaska Native alone", and "Some Other Race alone" tend to have much lower
+and different home ownership rates that fall below 50%. "Asian alone"
+shows somewhat higher ownership percentages in certain states like Hawaii, while "Native
+Hawaiian and Other Pacific Islander alone" and "Two or More Races" remain
+at smaller rates, but this can usually be attributed to smaller population sizes. The data visually
+displays significant racial disparities in home ownership across the U.S.,
+suggesting underlying socioeconomic, systemic, and structural inequalities that
+influence access to housing throughout America.
+
+
+
+
+```{r echo = FALSE, fig.height = 10, fig.width = 10}
+
+# Read the data without renaming anything
+data <- read_csv("DECENNIALDHC2020.H10-2025-05-20T004111.csv", show_col_types = FALSE)
+
+# Counts for owners of homes in each state
+owner_data <- data %>%
+  slice(3:9) %>%  # Rows with race descriptions
+  pivot_longer(-`Label (Grouping)`, names_to = "state", values_to = "count") %>% # Adding more rows to the data set for state counts 
+  mutate(race = str_trim(str_remove(`Label (Grouping)`, "Householder who is ")), # Remove Text before race descriptions
+         count = as.numeric(gsub(",", "", count))) # Sub out the commas for no spaces to get pure numbers 
+
+# Counts for total number of owners and renters across each state
+total_owners <- data %>%
+  slice(2) %>%  # Row with totals
+  pivot_longer(-`Label (Grouping)`, names_to = "state", values_to = "total_owners") %>% # Adding more rows to the data set for total state counts
+  mutate(total_owners = as.numeric(gsub(",", "", total_owners))) %>%
+  select(state, total_owners) # Selecting state alongside owner for use later
+
+# Joining counts for owners of homes in each state with totals for each state
+finalized_data <- owner_data %>%
+  left_join(total_owners, by = "state") %>%
+  mutate(homeownership_rate = count / total_owners)
+
+# Simple faceted plot
+ggplot(finalized_data, aes(x = state, y = homeownership_rate, fill = race)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~race, ncol = 2) + # Faceting on race
+  scale_y_continuous(labels = label_percent()) +
+  labs(title = "Homeownership by Race", x = "State", y = "Percentage of Owner-Occupied Homes") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 6), legend.position = "none")
+```
+
+## Plot 2:
+
+This geospatial map visualizes median household income across U.S. states,
+using a color gradient from dark blue (lower income) to dark red (higher income).
+The Southeastern states (Georgia, NC, SC, Mississippi, Louisiana, and West Virginia, etc.)
+appear in darker blue shades, representing lower median incomes around 
+$60,000. In contrast, states in the Northeast (like Maryland, Massachusetts, New Jersey, etc.) 
+and the West Coast (California, Washington, Colorado, etc.) show brighter
+greenish shades, signaling higher median incomes that exceed $100,000 in
+some areas. The Midwestern states typically fall in the mid-range
+teal color shade region, which are representative of moderate income levels slightly higher than the Southeast.
+This geographic disparity reveals the regional economic imbalances that exist throughout the nation. 
+These have most likely been a result of the living costs, population sizes, and
+educational attainment status that exists within every state.
+Regardless, these income patterns align with socioeconomic factors such as home
+ownership rates, cultures, job and health outcomes, and mental health services that exists within each of these states.
+As a result, it's more likely that these factors are influenced by the flow of money that comes with this high income.
+
+
+
+
+```{r echo = FALSE, warning = FALSE}
+
+# Loading data
+income_data <- read_csv("ACSST1Y2023.S1901-2025-05-20T030311.csv", show_col_types = FALSE) %>%
+  filter(`Label (Grouping)` == "Median income (dollars)") %>%
+  select(-`Label (Grouping)`) %>% # Exclude column from selection process
+  pivot_longer(everything(), names_to = "states", values_to = "median_income") %>% # Select all other columns and place them into rows with two more columns
+  mutate( # Creating new state and income variables that ignore the characters I want them to
+    state = str_to_lower(str_remove(states, "!!.*")),
+    median_income = as.numeric(gsub(",", "", median_income)) # Sub out comma
+  ) %>%
+  filter(!is.na(median_income)) # Removing error messages for missing data
+
+# Map data
+us_states_map <- map_data("state") %>%
+  mutate(region = str_to_lower(region))  # Lowercase to match earlier changes
+
+# Merging data toogether
+finalized_map_data <- income_data %>%
+  left_join(us_states_map, by = c("state" = "region")) %>%
+  filter(!is.na(median_income))  # Filtering out omitted values
+
+# Geo spatial map and color scaling 
+ggplot(finalized_map_data, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = median_income), color = "white", linewidth = 0.1) +
+  scale_fill_viridis(name = "Income ($)", option = "turbo", labels = dollar_format()) + theme_map()
+
+
+```
+
+## Plot 3:
+
+This violin plot also displays the distribution of median household income across all 50 
+states but does so under a different lens that emphasizes accuracy. The width of the plot at each income level represents the density 
+of states falling within that range. Furthermore, there are points that represent where 
+exactly each one of those states may accurately fall. Most states cluster between $65,000 and
+$80,000 since most people in America are middle-class citizens. In addition, as a
+result of this major density hump existing near the middle of the plot, the
+distribution itself is quite symmetric. A few outliers appear at the higher end
+(representative of a capitalistic society), with incomes approaching or exceeding $90,000,
+likely representing high-income states such as Maryland or New Jersey. Some 
+observations near the lower tail go below $60,000, likely 
+representing a smaller number of states with significantly lower incomes, such as
+Louisiana or Virginia. Overall, the plot reveals what you might expect, 
+since most of it is skewed with clear disparities between the highest and lowest-income states.
+
+
+
+```{r echo = FALSE}
+
+# Load data
+income_data <- read_csv("ACSSPP1Y2023.S0201-2025-05-20T060243.csv", show_col_types = F) %>%
+
+  # Removing random whitespace in each row under column one
+  mutate(`Label (Grouping)` = str_squish(`Label (Grouping)`)) %>%
+  # Filter using str_detect to match income row and to ignore certain characters in file
+  filter(str_detect(`Label (Grouping)`, regex("median household income", ignore_case = TRUE))) %>%
+  select(-`Label (Grouping)`) %>%
+  pivot_longer(cols = everything(), names_to = "states", values_to = "median_income") %>% # Selecting states and getting their income without the dollar sign
+  mutate(
+    state = str_to_lower(str_remove(states, "!!.*")),
+    median_income = as.numeric(gsub("[\\$,]", "", median_income))
+  ) %>%
+  filter(!is.na(median_income))
+
+# Plot: Violin of Median Household Income
+ggplot(income_data, aes(x = "", y = median_income)) +
+  geom_violin(fill = "lightblue", color = "blue", alpha = 0.7) +
+  geom_jitter(width = 0.1, alpha = 0.5, color = "darkblue") +
+  labs(
+    title = "Distribution of Median Household Income Across U.S. States",
+    y = "Median Household Income (USD)",
+    x = "States"
+  ) 
+
+
+
+
+```
+
+## Plot 4:
+
+This scatter plot examines the relationship between median gross rent and the
+percentage of the population with different education levels across U.S. states.
+In all three panels, there is a noticeable tendency for higher rents in states with higher
+proportions of residents holding advanced educational degrees. The Bachelors
+and Graduate panels hold a large proportion of their rent in the range above $1000
+because educational attainment increases, which confirms the correlation between 
+educated populations and higher cost matrices. Furthermore, there is a higher-likelihood
+that they will live in urbanized, gentrified, and high-demand areas. In contrast, the High School panel is more dispersed and
+less correlated, indicating that a higher percentage of high school–educated
+populations doesn't strongly predict rent levels. However, this is to be expected, 
+since a lower level of education can lead to a lower income, which in turn also
+leads to unpredictable outcomes for living standards. 
+
+
+```{r echo = FALSE}
+
+# Load the data
+census_data <- read_csv("ACSSPP1Y2023.S0201-2025-05-20T060243.csv", show_col_types = F) %>%
+  mutate(`Label (Grouping)` = str_squish(`Label (Grouping)`)) # Removing layers of whitespace in csv 
+
+# Getting median gross rent and filtering out the inconsistent spacing and formatting in csv while selecting specific columns 
+rent_data <- census_data %>%
+  filter(str_detect(`Label (Grouping)`, regex("Median gross rent", ignore_case = TRUE))) %>%
+  select(-`Label (Grouping)`) %>%
+  pivot_longer(cols = everything(), names_to = "states", values_to = "median_rent") %>%
+  mutate(
+    state = str_to_lower(str_remove(states, "!!.*")),
+    median_rent = as.numeric(gsub("[\\$,]", "", median_rent))
+  )
+
+# Getting educational levels from dataset table
+education_levels <- c(
+  "High school graduate or higher",
+  "Bachelor's degree or higher",
+  "Graduate or professional degree"
+)
+# Filtering out and selecting education levels and their percentage values due to inconsistent formatting of space in csv 
+education_data <- census_data %>%
+  filter(str_detect(`Label (Grouping)`, paste(education_levels, collapse = "|"))) %>%
+  select(`Label (Grouping)`, everything()) %>%
+  pivot_longer(cols = -`Label (Grouping)`, names_to = "states", values_to = "percent_educated") %>%
+  mutate(
+    state = str_to_lower(str_remove(states, "!!.*")),
+    percent_educated = as.numeric(str_remove(percent_educated, "%")),
+    education_level = case_when(
+      str_detect(`Label (Grouping)`, regex("high school", ignore_case = TRUE)) ~ "High School",
+      str_detect(`Label (Grouping)`, regex("bachelor", ignore_case = TRUE)) ~ "Bachelor",
+      str_detect(`Label (Grouping)`, regex("graduate", ignore_case = TRUE)) ~ "Graduate"
+    )
+  ) %>%
+  filter(!is.na(percent_educated), !is.na(education_level))
+
+# Joining the data together
+merged_data <- left_join(education_data, rent_data, by = c("state"))
+
+# Scatter plot faceted  on education level
+ggplot(merged_data, aes(x = percent_educated, y = median_rent)) +
+  geom_point(color = "darkred", alpha = 0.6) +
+  facet_wrap(~ education_level, scales = "free_x") +
+  labs(
+    title = "Median Gross Rent vs Education Level Across U.S. States",
+    x = "% of Population with Educational Level", y = "Median Gross Rent (USD)") 
+
+
+
+
+
+
+```
+
+
+
+## Plot 5:
+
+This bar plot displays median earnings by gender across various occupations in
+Florida, highlighting consistent wage disparities in almost all industries. In almost every occupation,
+males (yellow bars) earn more than females (purple bars), with particularly
+large gaps in high-paying fields such as legal occupations, health diagnosing
+and treating practitioners, and math-based jobs. While some occupations like
+food preparation and personal care services show smaller wage differences, these
+fields also have lower overall earnings for both groups. The consistent earnings gap across
+the spectrum reveals the systemic gender wage gap in real time, especially in
+higher-income professions. This helps individuals see why many fight for 
+equal pay and job opportunities across genders.
+
+
+
+```{r echo = FALSE, fig.height = 15, fig.width = 10}
+
+# Load the data
+data <- read_csv("ACSST1Y2023.S2411-2025-05-20T123534.csv", show_col_types = F)
+
+# Select relevant columns and rename for relevancy 
+bar_df <- data %>%
+  select(Occupation = `Label (Grouping)`,
+         Male = `Florida!!Median earnings (dollars) for male!!Estimate`,
+         Female = `Florida!!Median earnings (dollars) for female!!Estimate`) %>%
+  mutate(across(c(Male, Female), ~as.numeric(gsub(",", "", .))))
+
+# Filter out to longer format to make data easy to work with and merge together before plotting
+bar_df_long <- bar_df %>%
+  pivot_longer(cols = c(Male, Female), names_to = "Gender", values_to = "Earnings")
+bar_df_long$Occupation <- str_trunc(bar_df_long$Occupation, width = 45) # Shortening the occupation labels to fit 
+
+# Grouped bar plot (horizontal)
+ggplot(bar_df_long, aes(x = reorder(Occupation, Earnings), y = Earnings, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis(discrete = T, option = "viridis") +
+  coord_flip() + theme_base(base_size = 8) +                 
+  labs(title = "Median Earnings by Gender and Occupation in Florida",
+       x = "Occupation", y = "Earnings (USD)", fill = "Gender")
+
+```
+
+
+
+
+## Plot 6:
+
+
+This heat map displays poverty rates by age group ("Under 5 years",
+"5 to 17 years", "18 to 64 years", "65 years and over") across U.S. states, with
+intensity of red indicating higher poverty levels. Puerto Rico stands out
+significantly with the highest poverty rates across age groups, followed by
+Southern states such as Mississippi, Louisiana, and New Mexico, which also show
+elevated levels. In contrast, Northeastern and Midwestern states like
+New Hampshire, North Dakota, and Vermont exhibit consistently lower poverty
+rates. The distribution in the heat map along both axes suggests that states with similar
+socioeconomic factors share comparable poverty rates across age groups.
+The overall gradient shows a clear regional pattern, where southern and western
+states tend to have higher poverty levels, while the northeast and upper Midwest
+fare better. This distribution underscores persistent geographic disparities in
+economic well-being, with systemic factors likely driving regional differences
+in poverty across age demographics.
+
+
+
+
+
+
+```{r echo = FALSE, fig.height = 10, fig.width = 10, warning = FALSE}
+
+# Read the CSV file
+heat_df <- read_csv("ACSST1Y2023.S1701-2025-05-20T132859.csv", show_col_types = FALSE)
+
+# Age groups 
+target_labels <- c("Under 5 years", "5 to 17 years", "18 to 64 years", "65 years and over")
+
+# Filter so nothing but these labels are used 
+age_group_df <- heat_df %>%
+  filter(str_trim(`Label (Grouping)`) %in% target_labels)
+
+# Getting "Percent below poverty level" string columns
+percent_cols <- grep("Percent below poverty level", names(heat_df), value = TRUE) # Filter extraction out based on these integer values
+
+# Select and clean up percent data
+percent_data <- age_group_df %>%
+  select(all_of(percent_cols))
+
+# Assign cleaned state names as column names
+state_names <- str_extract(percent_cols, "^[^!]+")
+colnames(percent_data) <- state_names
+rownames(percent_data) <- str_trim(age_group_df$`Label (Grouping)`)
+
+# Convert to numeric values
+percent_data <- percent_data %>%
+  mutate(across(everything(), ~ as.numeric(str_remove(., "%"))))
+
+# States become rows and columns become ages
+heatmap_matrix <- t(as.matrix(percent_data))
+heatmap_matrix <- heatmap_matrix[complete.cases(heatmap_matrix), ]
+
+# Generate heatmap
+pheatmap(heatmap_matrix,
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         clustering_distance_rows = "euclidean",
+         clustering_distance_cols = "euclidean",
+         main = "Poverty Rate by Age Group and State",
+         color = colorRampPalette(c("white", "red"))(100))
+
+
+
+```
+
+
+## Plot 7:
+
+This line plot also displays the poverty rates by age group, but does so across four U.S.
+states over time. A consistent pattern emerges across all states, with poverty rates being highest among the youngest age
+group ("Under 5 years"). Over time as they get older, people reach the lowest
+levels at "65 years and over", revealing the work that they do as they grow up to raise themselves out of poverty. 
+Delaware and Connecticut show the highest poverty rates in the youngest age categories, particularly notable in the "Under 5 years" and
+"5 to 17 years" groups, while Colorado maintains a smaller decline across all age groups. The steepest drop appears between the "5 to 17
+years", which makes sense, as this is the first time they are truly getting older. This
+trend highlights a heightened vulnerability to poverty among children and
+adolescents, which represents the systemic issues with childcare costs, support systems for impoverished families, and
+single-parent households in low-income regions. The similarity of poverty rates in older age groups also suggests that social reforms (Medicare, Social Security, Retirement Plans, etc.) has been effective in reducing poverty for individuals as they got older later on in life.
+
+
+
+```{r echo = FALSE}
+
+# Load the data
+line_df <- read_csv("ACSST1Y2023.S1701-2025-05-20T132859.csv", show_col_types = F)
+
+# Clean column names for easier use
+colnames(line_df) <- make.names(colnames(line_df))
+
+# Filter for age group rows
+age_groups <- line_df %>%
+  filter(grepl("Under 5 years|5 to 17 years|18 to 64 years|65 years and over", Label..Grouping.)) # Filter out based on these age group strings 
+
+# Select only percent below poverty columns for a few states
+selected_states <- age_groups %>%
+  select(Label..Grouping.,
+         Colorado = Colorado..Percent.below.poverty.level..Estimate,
+         Connecticut = Connecticut..Percent.below.poverty.level..Estimate,
+         Delaware = Delaware..Percent.below.poverty.level..Estimate,
+         Maryland = Maryland..Percent.below.poverty.level..Estimate)
+
+# Convert to long format and fix age group order by selecting label column and parsng out percent
+new_data <- selected_states %>%
+  pivot_longer(-Label..Grouping., names_to = "State", values_to = "Percent") %>%
+  mutate(
+    Percent = parse_number(Percent),
+    AgeGroup = factor(str_trim(Label..Grouping.),
+                      levels = c("Under 5 years",
+                                 "5 to 17 years",
+                                 "18 to 64 years",
+                                 "65 years and over"))
+  )
+
+# Plot line graph with percentages
+ggplot(new_data, aes(x = AgeGroup, y = Percent, group = State, color = State)) +
+  geom_line(size = 1.2) +
+  labs(title = "Poverty Rates by Age Group Across Selected States",
+       x = "Age Group",
+       y = "Percent Below Poverty Level")
+
+
+```
+
+
+## Plot 8:
+
+This network plot visualizes the distribution of educational attainment by
+gender in Virginia, with edge thickness representing the proportion of the 
+population in each education-gender pair. The nodes for "Male" and "Female"
+are centralized, and connect to different education levels. The boldest lines
+connect both genders to "High school graduate or higher" and "Some college or
+associate's degree," revealing that these are the most prevalent education levels
+among the population as a whole. The thinnest edges go to "Graduate or professional degree" and
+"Less than high school graduate", which technically makes sense as there are fewer people in society with these educational categories.
+Overall, the plot reveals that educational attainment in Virginia (And likely the country if Virginia is thought of as a sample) is typically in
+the middle for educational levels within both genders (With slight deviations). 
+
+
+
+```{r echo = FALSE, fig.height = 10, fig.width = 10, warning = FALSE}
+
+# Load the data
+network_df <- read_csv("ACSST1Y2023.S1501-2025-05-20T141520.csv", show_col_types = FALSE)
+
+# Clean column names
+colnames(network_df) <- make.names(colnames(network_df))
+
+# Filter to get specific education levels
+edu_data <- network_df %>%
+  filter(str_detect(Label..Grouping., "Less than high school|High school graduate|Some college|Bachelor's degree|Graduate")) %>% # Filter out education strings
+  select(Label = Label..Grouping., # Seleting Males and Females in Virginia 
+         Male = Virginia..Percent.Male..Estimate,
+         Female = Virginia..Percent.Female..Estimate) %>%
+  mutate( # Label and omit the missing values that are parsed
+    Label = str_trim(Label),
+    Male = suppressWarnings(parse_number(Male)),
+    Female = suppressWarnings(parse_number(Female))
+  )
+
+# Getting male and female columns and assigning them with their edges, with weight on percentages
+edges <- edu_data %>%
+  pivot_longer(cols = c(Male, Female), names_to = "Gender", values_to = "Percent") %>%
+  filter(!is.na(Percent)) %>%
+  rename(from = Gender, to = Label, weight = Percent)
+
+# Build graph 
+g <- tbl_graph(edges = edges, directed = F)
+
+# Plot network plot with stress method 
+ggraph(g, "stress") +
+  geom_edge_link(aes(width = weight), alpha = 0.4) +
+  geom_node_point(size = 5) +
+  geom_node_text(aes(label = name), repel = T) +
+  labs(title = "Education-Gender Network in Virginia (Percent of Population)")
+
+
+```
+
+# Conclusion/Takeaway:
+
+The visual analyses across these figures reveal that statistical outcomes in the United States (income, poverty, education, home ownership, etc.) are unevenly distributed across demographic and geographic groups. Income and home ownership rates are highest among White and Asian populations, while Black, Native, and multiracial groups consistently experience less fortunate outcomes, highlighting persistent racial and economical disparities. Regionally, the Northeast and West tend to have higher median incomes and educational attainment, while the South often faces elevated poverty rates and lower income levels. Age-based patterns also emerge, with children under five—experiencing the highest poverty rates across many states from birth. Gender disparities are evident in both income and education, with males generally earning more than females across most occupations despite comparable educational attainment in many fields. Overall, the data reveals the systemic inequality in the distribution of economic and social outcomes in a country where people are shaped by socioeconomic factors such as race, gender, geography, and age. The patterns shown in these data visualizations only stress the need for government policy interventions that address the heart of these inequities. No matter what side you stand on in the matter, these plots showcase the "Truth about America". 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
